@@ -1,0 +1,461 @@
+---
+title: 'Longitudinal mediation analysis for chronic neck pain: data analytic plan'
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-03-20"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(boot)
+library(kableExtra)
+set.seed(123)
+seed = sample.int(10000, 5000, replace = FALSE)
+```
+
+```{r}
+#  Outcomes: Disability (NDI, i.e. Y2) and pain intensity (VAS, i.e. Y1)
+## VAS as outcome: ROM (M1), PPT (M2) and Fx (M3)
+## NDI as outcome: ROM (M1), PPT (M2), Fx (M3) and VAS (Y1
+## Pretreatment confounders: Age, Gender, and outcome and mediators baseline values (T0)
+
+
+#  Import Data and renaming the varaibles to match the paper 
+kine_data = read_excel("Dataset_MA_DN.xlsx")  # dim = 128*25 
+
+# The First Model:
+# kine_data = rename(kine_data, 
+#                    Y2_0 = NDI_T0, 
+#                    Y2_1 = NDI_T2,
+#                    Y2_2 = NDI_T3,
+#                    Y2_3 = NDI_T4, 
+#                    Y1_0 = VAS_T0,
+#                    Y1_1 = VAS_T2,
+#                    Y1_2 = VAS_T3,
+#                    Y1_3 = VAS_T4,
+#                    M1_0 = ROM_T0,
+#                    M1_1 = ROM_T2,
+#                    M1_2 = ROM_T3,
+#                    M1_3 = ROM_T4,
+#                    M2_0 = PPT_T0,
+#                    M2_1 = PPT_T2,
+#                    M2_2 = PPT_T3,
+#                    M2_3 = PPT_T4,
+#                    M3_0 = Fx_T0,
+#                    M3_1 = Fx_T2,
+#                    M3_2 = Fx_T3,
+#                    M3_3 = Fx_T4
+# )
+
+
+# The Second Model:
+## VAS as outcome: PPT (M1), ROM (M2), Fx (M3)
+## NDI as outcome: PPT (M1), ROM (M2), Fx (M3) and VAS (Y1).
+
+kine_data = rename(kine_data,
+                   Y2_0 = NDI_T0,
+                   Y2_1 = NDI_T2,
+                   Y2_2 = NDI_T3,
+                   Y2_3 = NDI_T4,
+                   Y1_0 = VAS_T0,
+                   Y1_1 = VAS_T2,
+                   Y1_2 = VAS_T3,
+                   Y1_3 = VAS_T4,
+                   M1_0 = PPT_T0,
+                   M1_1 = PPT_T2,
+                   M1_2 = PPT_T3,
+                   M1_3 = PPT_T4,
+                   M2_0 = ROM_T0,
+                   M2_1 = ROM_T2,
+                   M2_2 = ROM_T3,
+                   M2_3 = ROM_T4,
+                   M3_0 = Fx_T0,
+                   M3_1 = Fx_T2,
+                   M3_2 = Fx_T3,
+                   M3_3 = Fx_T4
+)
+
+kine_data$Gender.f <- factor(kine_data$Gender)
+
+```
+
+```{r}
+# Y11
+effect_11 = function(kine_data, x) {
+  x = x
+  xst = 1 - x
+  kine_data_cp = kine_data # Use all observations 
+  kine_data_cp$Group= x
+  
+  # Step 0: 
+  mod11 = lm(Y1_1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) + (M1_1)) , data = kine_data) # First block: baseline confounder, Second block: M1, Third block: L1
+  kine_data$a0 = predict(mod11, newdata = kine_data_cp)
+  
+  # Step 1: 
+  ## j = 1 : M0 and L0 == null 
+  ### 1.1
+  mod_b1 = lm(a0 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) +  ((M1_1)) , data = kine_data) # M0 = Null , L1
+  kine_data_cp$Group= xst
+  kine_data$b1 = predict(mod_b1, newdata = kine_data_cp)
+  ### 1.2
+  mod_a1 = lm(b1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0)  , data = kine_data) #M0, L0
+  kine_data_cp$Group= x
+  kine_data$a1 = predict(mod_a1, newdata = kine_data_cp)
+  
+  # Step 2: Average a1 
+  Y11 = mean(kine_data$a1) 
+}
+```
+
+
+
+```{r}
+#Y12
+effect_12 = function(kine_data, x) { 
+  x = x
+  xst = 1 - x
+  kine_data_cp = kine_data # Use all observations 
+  kine_data_cp$Group= x
+  
+  # Step 0: 
+  mod12 = lm(Y1_2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_2) + (Y1_1 + Y2_1 + M1_2 + M3_1)) , data = kine_data) # First block: baseline conFounders, Second block: M2, Third block: L2, does not include M3_1 because L excludes M(at -1) based on figure 2 description
+  kine_data$a0 = predict(mod12, newdata = kine_data_cp)
+  
+  # Step 1: 
+  ## j = 1 : M0 and L0 == null 
+  ### 1.1
+  mod_b1 = lm(a0 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) +  ((M2_1) + (Y1_1 + Y2_1 + M1_2 + M3_1)) , data = kine_data) #M1 , L2
+  kine_data_cp$Group= xst
+  kine_data$b1 = predict(mod_b1, newdata = kine_data_cp)
+  ### 1.2
+  mod_a1 = lm(b1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) + (M1_1)) , data = kine_data) #M1, L1
+  kine_data_cp$Group= x
+  kine_data$a1 = predict(mod_a1, newdata = kine_data_cp)
+  
+  ## j = 2
+  ### 1.1
+  mod_b2 = lm(a1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + (M1_1), data = kine_data) # M0, L1
+  kine_data_cp$Group= xst
+  kine_data$b2 = predict(mod_b2, newdata = kine_data_cp)
+  ### 1.2
+  mod_a2 = lm(b2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0), data = kine_data) # M0, L0 
+  kine_data_cp$Group= x
+  kine_data$a2 = predict(mod_a2, newdata = kine_data_cp)
+  
+  # Step 2: Average a2 
+  Y12 = mean(kine_data$a2) 
+}
+```
+
+
+```{r}
+# Editing Code
+# For time-point 3 only: Y13
+effect_13 = function(kine_data, x) { # does not need i index any more 
+  x = x
+  xst = 1 - x
+  kine_data_cp = kine_data # Use all observations 
+  kine_data_cp$Group= x
+  
+  # Step 0: 
+  mod13 = lm(Y1_3 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ( (M2_3) + (Y1_2 + Y2_2 + M1_3 + M3_2)) , data = kine_data) # First block: baseline conFounders, Second block: M3, Third block: L3, does not include M3_2 because L excludes M(at -1) based on figure 2 description
+  kine_data$a0 = predict(mod13, newdata = kine_data_cp)
+  
+  # Step 1: 
+  ## j = 1 : M0 and L0 == null 
+  ### 1.1
+  mod_b1 = lm(a0 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) +  ((M2_2) + (Y1_2 + Y2_2 + M1_3 + M3_2)) , data = kine_data) #M2 , L3
+  kine_data_cp$Group= xst
+  kine_data$b1 = predict(mod_b1, newdata = kine_data_cp)
+  ### 1.2
+  mod_a1 = lm(b1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_2) + (Y1_1 + Y2_1 + M1_2 + M3_1)) , data = kine_data) #M2, L2
+  kine_data_cp$Group= x
+  kine_data$a1 = predict(mod_a1, newdata = kine_data_cp)
+  
+  ## j = 2
+  ### 1.1
+  mod_b2 = lm(a1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) + (Y1_1 + Y2_1 + M1_2 + M3_1)), data = kine_data) # M1, L2
+  kine_data_cp$Group= xst
+  kine_data$b2 = predict(mod_b2, newdata = kine_data_cp)
+  ### 1.2
+  mod_a2 = lm(b2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) +  (M1_1)) , data = kine_data) # M1, L1 
+  kine_data_cp$Group= x
+  kine_data$a2 = predict(mod_a2, newdata = kine_data_cp)
+  
+  ## j = 3
+  ### 1.1
+  mod_b3 = lm(a2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + (M1_1), data = kine_data) # MO, L1
+  kine_data_cp$Group= xst
+  kine_data$b3 = predict(mod_b3 ,newdata = kine_data_cp)
+  ### 1.2
+  mod_a3 = lm(b3 ~ Group + Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0, data = kine_data)  # M0, L0 -> Just baseline confounders
+  kine_data_cp$Group= x
+  kine_data$a3 = predict(mod_a3, newdata = kine_data_cp)
+  
+  # Step 2: Average a3 
+  Y13 = mean(kine_data$a3) 
+}
+
+```
+
+
+```{r}
+#Y21
+effect_21 = function(kine_data, x) {
+  x = x
+  xst = 1 - x
+  kine_data_cp = kine_data # Use all observations 
+  kine_data_cp$Group= x
+  
+  # Step 0: 
+  mod21 = lm(Y2_1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) + (M1_1)) , data = kine_data) # First block: baseline confounder, Second block: M1, Third block: L1
+  kine_data$a0 = predict(mod21, newdata = kine_data_cp)
+  
+  # Step 1: 
+  ## j = 1 : M0 and L0 == null 
+  ### 1.1
+  mod_b1 = lm(a0 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) +  ((M1_1)) , data = kine_data) # M0 = Null , L1
+  kine_data_cp$Group= xst
+  kine_data$b1 = predict(mod_b1, newdata = kine_data_cp)
+  ### 1.2
+  mod_a1 = lm(b1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0)  , data = kine_data) #M0, L0
+  kine_data_cp$Group= x
+  kine_data$a1 = predict(mod_a1, newdata = kine_data_cp)
+  
+  # Step 2: Average a1 
+  Y21 = mean(kine_data$a1) 
+}
+```
+
+
+```{r}
+#Y22
+effect_22 = function(kine_data, x) { 
+  x = x
+  xst = 1 - x
+  kine_data_cp = kine_data # Use all observations 
+  kine_data_cp$Group= x
+  
+  # Step 0: 
+  mod22 = lm(Y2_2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_2) + (Y1_1 + Y2_1 + M1_2 + M3_1)) , data = kine_data) # First block: baseline conFounders, Second block: M2, Third block: L2, does not include M3_1 because L excludes M(at -1) based on figure 2 description
+  kine_data$a0 = predict(mod22, newdata = kine_data_cp)
+  
+  # Step 1: 
+  ## j = 1 : M0 and L0 == null 
+  ### 1.1
+  mod_b1 = lm(a0 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) +  ((M2_1) + (Y1_1 + Y2_1 + M1_2 + M3_1)) , data = kine_data) #M1 , L2
+  kine_data_cp$Group= xst
+  kine_data$b1 = predict(mod_b1, newdata = kine_data_cp)
+  ### 1.2
+  mod_a1 = lm(b1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) + (M1_1 + M2_1)) , data = kine_data) #M1, L1
+  kine_data_cp$Group= x
+  kine_data$a1 = predict(mod_a1, newdata = kine_data_cp)
+  
+  ## j = 2
+  ### 1.1
+  mod_b2 = lm(a1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + (M1_1), data = kine_data) # M0, L1
+  kine_data_cp$Group= xst
+  kine_data$b2 = predict(mod_b2, newdata = kine_data_cp)
+  ### 1.2
+  mod_a2 = lm(b2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0), data = kine_data) # M0, L0 
+  kine_data_cp$Group= x
+  kine_data$a2 = predict(mod_a2, newdata = kine_data_cp)
+  
+  # Step 2: Average a2 
+  Y22 = mean(kine_data$a2) 
+}
+```
+
+```{r}
+# Y23
+effect_23 = function(kine_data, x) { # does not need i index any more 
+  x = x
+  xst = 1 - x
+  kine_data_cp = kine_data # Use all observations 
+  kine_data_cp$Group= x
+  
+  # Step 0: 
+  mod23 = lm(Y2_3 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ( (M2_3) + (Y1_2 + Y2_2 + M1_3 + M3_2)) , data = kine_data) # First block: baseline conFounders, Second block: M3, Third block: L3, does not include M3_2 because L excludes M(at -1) based on figure 2 description
+  kine_data$a0 = predict(mod23, newdata = kine_data_cp)
+  
+  # Step 1: 
+  ## j = 1 : M0 and L0 == null 
+  ### 1.1
+  mod_b1 = lm(a0 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) +  ((M2_2) + (Y1_2 + Y2_2 + M1_3 + M3_2)) , data = kine_data) #M2 , L3
+  kine_data_cp$Group= xst
+  kine_data$b1 = predict(mod_b1, newdata = kine_data_cp)
+  ### 1.2
+  mod_a1 = lm(b1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_2) + (Y1_1 + Y2_1 + M1_2 + M3_1)) , data = kine_data) #M2, L2
+  kine_data_cp$Group= x
+  kine_data$a1 = predict(mod_a1, newdata = kine_data_cp)
+  
+  ## j = 2
+  ### 1.1
+  mod_b2 = lm(a1 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) + (Y1_1 + Y2_1 + M1_2 + M3_1)), data = kine_data) # M1, L2
+  kine_data_cp$Group= xst
+  kine_data$b2 = predict(mod_b2, newdata = kine_data_cp)
+  ### 1.2
+  mod_a2 = lm(b2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + ((M2_1) +  (M1_1)) , data = kine_data) # M1, L1 
+  kine_data_cp$Group= x
+  kine_data$a2 = predict(mod_a2, newdata = kine_data_cp)
+  
+  ## j = 3
+  ### 1.1
+  mod_b3 = lm(a2 ~ Group + (Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0) + (M1_1), data = kine_data) # MO, L1
+  kine_data_cp$Group= xst
+  kine_data$b3 = predict(mod_b3 ,newdata = kine_data_cp)
+  ### 1.2
+  mod_a3 = lm(b3 ~ Group + Gender.f + Age + Y1_0 + Y2_0 + M1_0 + M2_0 + M3_0, data = kine_data)  # M0, L0 -> Just baseline confounders
+  kine_data_cp$Group= x
+  kine_data$a3 = predict(mod_a3, newdata = kine_data_cp)
+  
+  # Step 2: Average a3 
+  Y23 = mean(kine_data$a3) 
+}
+```
+
+This block is for useful functions that we will call in other steps. 
+
+```{r}
+# Tables 
+names =  c("Y1_1", "Y1_2", "Y1_3", "Y2_1", "Y2_2", "Y2_3")
+for (i in names) {
+  assign(i, data.frame(TE_S = numeric(), TE_B = numeric(), 
+                       DE1_S = numeric(), DE1_B = numeric(),
+                       IE1_S = numeric(), IE1_B = numeric(), 
+                       DE2_S = numeric(), DE2_B = numeric(), 
+                       IE2_S = numeric(), IE2_B = numeric()) 
+  )
+}
+# Function to Create New row of Effects calculation: 
+new_row = function(name) {
+  switch(name,
+         "Y1_1" = {effect = effect_11},
+         "Y1_2" = {effect = effect_12},
+         "Y1_3" = {effect = effect_13},
+         "Y2_1" = {effect = effect_21},
+         "Y2_2" = {effect = effect_22},
+         "Y2_3" = {effect = effect_23},
+         stop("Enter something that switches me!")
+  )
+  # For Bootstrap
+  Y_10_B = effect(data_boot, 1)
+  Y_01_B = effect(data_boot, 0)
+  Y_11_B = colMeans(data_boot[data_boot$Group == 1, name], na.rm = T)
+  Y_00_B = colMeans(data_boot[data_boot$Group == 0, name] , na.rm = T)
+  
+  Y_10_S = effect(kine_data, 1)
+  Y_01_S = effect(kine_data, 0)
+  Y_11_S = colMeans(kine_data[kine_data$Group == 1, name], na.rm = T)
+  Y_00_S = colMeans(kine_data[kine_data$Group == 0, name] , na.rm = T)
+  
+  # Total Effect 
+  TE_B = Y_11_B - Y_00_B
+  TE_S = Y_11_S - Y_00_S
+  # Direct Effect
+  DE1_B = Y_11_B - Y_01_B
+  DE1_S = Y_11_S - Y_01_S
+  
+  DE2_B =  Y_10_B - Y_00_B
+  DE2_S =  Y_10_S - Y_00_S
+  # Indirect Effect 
+  IE1_B = Y_01_B - Y_00_B
+  IE1_S = Y_01_S - Y_00_S
+  
+  IE2_B =  Y_11_B - Y_10_B
+  IE2_S =  Y_11_S - Y_10_S
+  # Add to output: 
+  new_row =  data.frame("TE_S" = TE_S, "TE_B" = TE_B, 
+                        "DE1_S" = DE1_S , "DE1_B" = DE1_B,
+                        "IE1_S" = IE1_S, "IE1_B" = IE1_B, 
+                        "DE2_S" = DE2_S, "DE2_B" = DE2_B, 
+                        "IE2_S" = IE2_S, "IE2_B" = IE2_B)
+  return(new_row)
+}
+
+# Calculate Confidence Intervals: Percentile CI / Wald CI 
+boot_CI = function(data) {
+  TE = round(mean(data$TE_S), 3)
+  TE_up = round(TE + qnorm(.975)*sd(data$TE_B), 3)
+  TE_low = round(TE - qnorm(.975)*sd(data$TE_B), 3)
+  # TE_up  = round(sort(data$TE_B)[.975*length(data$TE_B)], 3)
+  # TE_low  = round(sort(data$TE_B)[.025*length(data$TE_B)], 3)
+  
+  DE1 = round(mean(data$DE1_S), 3)
+  DE1_up = round(DE1 + qnorm(.975)*sd(data$DE1_B), 3)
+  DE1_low = round(DE1 - qnorm(.975)*sd(data$DE1_B), 3)
+  # DE1_up  =  round(sort(data$DE1_B)[.975*length(data$DE1_B)], 3)
+  # DE1_low =  round(sort(data$DE1_B)[.025*length(data$DE1_B)], 3)
+  
+  DE2 = round(mean(data$DE2_S), 3)
+  DE2_up = round(DE2 + qnorm(.975)*sd(data$DE2_B), 3)
+  DE2_low = round(DE2 - qnorm(.975)*sd(data$DE2_B), 3)
+  # DE2_up =  round(sort(data$DE2_B)[.975*length(data$DE2_B)], 3)
+  # DE2_low =  round(sort(data$DE2_B)[.025*length(data$DE2_B)], 3)  
+  
+  IE1 = round(mean(data$IE1_S), 3)
+  IE1_up = round(IE1 + qnorm(.975)*sd(data$IE1_B), 3)
+  IE1_low = round(IE1 - qnorm(.975)*sd(data$IE1_B), 3)
+  # IE1_up =  round(sort(data$IE1_B)[.975*length(data$IE1_B)], 3)
+  # IE1_low =  round(sort(data$IE1_B)[.025*length(data$IE1_B)], 3)  
+  
+  IE2 = round(mean(data$IE2_S), 3)
+  IE2_up = round(IE2 + qnorm(.975)*sd(data$IE2_B), 3)
+  IE2_low = round(IE2 - qnorm(.975)*sd(data$IE2_B), 3)
+  # IE2_up =  round(sort(data$IE2_B)[.975*length(data$IE2_B)], 3)
+  # IE2_low =  round(sort(data$IE2_B)[.025*length(data$IE2_B)], 3)  
+  
+  result = data.frame(Y = deparse(substitute(data)),
+                      TE = paste(TE, "(", TE_low,",",  TE_up, ")"),
+                      DE1 = paste(DE1, "(", DE1_low,",", DE1_up, ")") , 
+                      IE1 = paste(IE1, "(", IE1_low, ",",IE1_up, ")") ,
+                      DE2 = paste(DE2, "(", DE2_low, ",",DE2_up, ")") , 
+                      IE2 = paste(IE2, "(", IE2_low, ",",IE2_up, ")") )
+  return(result)
+}  
+
+
+
+
+```
+
+
+
+```{r, warning = FALSE}
+#Boot-strapping step: 
+library(data.table)
+## Already randomly sample 500 seeds to use 
+for (i in seed) {
+  # Sample data here  
+  set.seed(i)
+  data_index = sample(seq_len(nrow(kine_data)), size = 128, replace = TRUE)
+  data_boot = kine_data[data_index, ]
+  
+  # Generating the effects for each bootstrapping sample 
+  
+  ## Mediator M3 for Y1
+  Y1_1 = rbindlist(list(Y1_1, new_row("Y1_1")) , fill = TRUE)
+  Y1_2 = rbindlist(list(Y1_2, new_row("Y1_2")) , fill = TRUE)
+  Y1_3 = rbindlist(list(Y1_3, new_row("Y1_3")) , fill = TRUE)
+  
+  
+  # Mediator M3 for Y2
+  Y2_1 = rbindlist(list(Y2_1, new_row("Y2_1")) , fill = TRUE)
+  Y2_2 = rbindlist(list(Y2_2, new_row("Y2_2")) , fill = TRUE)
+  Y2_3 = rbindlist(list(Y2_3, new_row("Y2_3")) , fill = TRUE)
+}
+
+Result = rbindlist(list(boot_CI(Y1_1), boot_CI(Y1_2), boot_CI(Y1_3), 
+                        boot_CI(Y2_1), boot_CI(Y2_2), boot_CI(Y2_3)) , fill = TRUE)
+Result$Mediator = c(rep("M2", 6))
+
+Result[, c(1, 7, 2,3,4,5,6)]
+```
+
+
+
